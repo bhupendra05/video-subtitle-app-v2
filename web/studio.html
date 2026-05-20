@@ -409,6 +409,16 @@
           <div class="scheme-name">Electric Blue</div>
           <div class="scheme-desc">Space & Future</div>
         </button>
+        <button class="scheme-btn" data-scheme="solar" onclick="selectScheme(this)">
+          <div class="scheme-dot" style="background: linear-gradient(90deg, #FF6B00, #FFB800); border: 1px solid #ddd"></div>
+          <div class="scheme-name">☀️ Solar</div>
+          <div class="scheme-desc">Motivation · Light</div>
+        </button>
+        <button class="scheme-btn" data-scheme="clean-blue" onclick="selectScheme(this)">
+          <div class="scheme-dot" style="background: linear-gradient(90deg, #0055FF, #00AAFF); border: 1px solid #ddd"></div>
+          <div class="scheme-name">🌤 Clean Blue</div>
+          <div class="scheme-desc">Business · Light</div>
+        </button>
       </div>
     </div>
 
@@ -439,6 +449,16 @@
         </div>
         <label class="toggle">
           <input type="checkbox" id="useI2V" onchange="onI2VChange(this)">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-row" style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.25);border-radius:10px;padding:10px 12px">
+        <div class="toggle-info">
+          <div class="toggle-title">🤖 AI Avatar PiP</div>
+          <div class="toggle-sub">Talking-head robot in corner (D-ID or Replicate)</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="useAvatar">
           <span class="slider"></span>
         </label>
       </div>
@@ -586,9 +606,20 @@
     { key: 'tts',         label: '🎙️  Synthesising voice (Edge-TTS)',    pct: 22 },
     { key: 'transcribe',  label: '📝  Transcribing with Whisper',        pct: 33 },
     { key: 'images',      label: '🖼️  Generating cinematic images',      pct: 44 },
-    { key: 'i2v',         label: '🎥  Animating images → video (Wan2.1)', pct: 68 },
+    { key: 'i2v',         label: '🎥  Animating images → video (Wan2.1)', pct: 65 },
     { key: 'render',      label: '🎬  Rendering with Remotion',          pct: 82 },
     { key: 'grade',       label: '🎨  Applying cinematic grade',         pct: 92 },
+    { key: 'done',        label: '✅  Video ready!',                     pct: 100 },
+  ];
+  const PIPELINE_STEPS_AVATAR = [
+    { key: 'script',      label: '✍️  Generating script via Gemini',    pct: 10 },
+    { key: 'tts',         label: '🎙️  Synthesising voice (Edge-TTS)',    pct: 22 },
+    { key: 'transcribe',  label: '📝  Transcribing with Whisper',        pct: 33 },
+    { key: 'images',      label: '🖼️  Generating cinematic images',      pct: 44 },
+    { key: 'i2v',         label: '🎥  Animating images → video (Wan2.1)', pct: 58 },
+    { key: 'avatar',      label: '🤖  Generating AI avatar (D-ID)',      pct: 72 },
+    { key: 'render',      label: '🎬  Rendering with Remotion',          pct: 85 },
+    { key: 'grade',       label: '🎨  Applying cinematic grade',         pct: 94 },
     { key: 'done',        label: '✅  Video ready!',                     pct: 100 },
   ];
   let PIPELINE_STEPS = PIPELINE_STEPS_DEFAULT;
@@ -660,11 +691,12 @@
 
     const voice      = el('voiceSelect').value;
     const useI2V     = el('useI2V').checked;
+    const useAvatar  = el('useAvatar').checked;
     const useImages  = useI2V || el('useImages').checked;
     const useGrade   = el('useGrade').checked;
 
     // Switch pipeline steps based on mode
-    PIPELINE_STEPS = useI2V ? PIPELINE_STEPS_I2V : PIPELINE_STEPS_DEFAULT;
+    PIPELINE_STEPS = useAvatar ? PIPELINE_STEPS_AVATAR : useI2V ? PIPELINE_STEPS_I2V : PIPELINE_STEPS_DEFAULT;
 
     // Reset UI
     el('idleState').style.display  = 'none';
@@ -684,7 +716,7 @@
       const resp = await fetch('/api/generate-short', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, voice, colorScheme: selectedScheme, useImages, useI2V, useGrade }),
+        body: JSON.stringify({ topic, voice, colorScheme: selectedScheme, useImages, useI2V, useAvatar, useGrade }),
       });
       if (!resp.ok) throw new Error((await resp.json()).error || 'Failed to start');
       const { jobId } = await resp.json();

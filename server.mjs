@@ -226,7 +226,8 @@ app.post('/api/generate-short', (req, res) => {
     voice      = 'en-US-AriaNeural',
     colorScheme,
     useImages  = true,
-    useI2V     = false,   // NEW: animate images into real video clips
+    useI2V     = false,   // animate images into real video clips
+    useAvatar  = false,   // AI talking-head avatar PiP
     useGrade   = true,
     imageCount = 4,       // how many images to generate (1-6)
   } = req.body;
@@ -235,7 +236,7 @@ app.post('/api/generate-short', (req, res) => {
   const jobId = Date.now().toString();
   shortJobs.set(jobId, {
     status: 'running', step: 'script', logs: [],
-    topic, voice, colorScheme, useImages, useI2V, useGrade,
+    topic, voice, colorScheme, useImages, useI2V, useAvatar, useGrade,
     script: null, videoPath: null, error: null,
   });
 
@@ -247,6 +248,7 @@ app.post('/api/generate-short', (req, res) => {
   } else if (useImages) {
     args.push('--images');
   }
+  if (useAvatar) args.push('--avatar');
   if (imageCount && imageCount !== 4) args.push('--count', String(imageCount));
   if (!useGrade) args.push('--no-grade');
 
@@ -269,8 +271,12 @@ app.post('/api/generate-short', (req, res) => {
     else if (line.includes('Step 4')) job.step = 'images';
     else if (line.includes('Step 5') && line.includes('Animating')) job.step = 'i2v';
     else if (line.includes('Step 5')) job.step = 'broll';
-    else if (line.includes('Step 6') || line.includes('Remotion render')) job.step = 'render';
-    else if (line.includes('Step 7') || line.includes('cinematic')) job.step = 'grade';
+    else if (line.includes('AI avatar') || line.includes('talking-head')) job.step = 'avatar';
+    else if (line.includes('Remotion render')) job.step = 'render';
+    else if (line.includes('cinematic color grade')) job.step = 'grade';
+    else if (line.includes('Step 6') && !line.includes('avatar')) job.step = 'render';
+    else if (line.includes('Step 7')) job.step = 'grade';
+    else if (line.includes('Step 8')) job.step = 'grade';
     // I2V specific progress lines
     else if (line.includes('[i2v]')) job.step = 'i2v';
     // Detect script JSON in stdout (create-short writes it to SCRIPT_JSON, not stdout)

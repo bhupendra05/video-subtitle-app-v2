@@ -50,7 +50,8 @@ const topic      = getArg('--topic');
 const scriptIn   = getArg('--script');       // pre-written script JSON
 const voice      = getArg('--voice', 'en-US-AriaNeural');
 const colorArg   = getArg('--color');        // override colorScheme from script
-const useI2V     = hasFlag('--i2v');         // NEW: enable image-to-video animation
+const useI2V     = hasFlag('--i2v');         // enable image-to-video animation
+const useAvatar  = hasFlag('--avatar');      // AI talking-head avatar PiP
 const fetchImages = hasFlag('--images') || useI2V;  // --i2v implies --images
 const fetchBroll  = hasFlag('--broll');      // legacy: text-to-video broll
 const imageCount  = parseInt(getArg('--count', '4'), 10); // images to generate
@@ -71,6 +72,7 @@ Flags:
   --color      Color scheme: teal-gold | cyber-green | fire-red | electric-blue
   --i2v        ⭐ Animate images into video clips (Wan2.1-I2V) — BEST quality
   --images     Generate images only (no animation, uses Ken Burns)
+  --avatar     🤖 Add AI talking-head avatar PiP (D-ID or Replicate SadTalker)
   --count      Number of images to generate (default: 4, max: 6)
   --no-grade   Skip FFmpeg cinematic color grading
   --dry-run    Print steps without executing
@@ -86,7 +88,7 @@ Available free voices:
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = useAvatar ? 8 : 7;
 const JOB_ID = Date.now().toString();
 
 const step = (n, msg) => {
@@ -308,9 +310,44 @@ async function stepBroll(script) {
   return clips;
 }
 
-// ── Step 6: Remotion render ───────────────────────────────────────────────────
-async function stepRender(script, durationSec, imageSlides, brollClips) {
-  step(6, 'Remotion render');
+// ── Step 5c: Avatar (AI talking-head PiP) ────────────────────────────────────
+async function stepAvatar() {
+  const stepNum = useAvatar ? 6 : null;
+  if (!useAvatar) return null;
+
+  step(stepNum, 'AI avatar (talking-head PiP)');
+
+  const AVATAR_DIR  = path.join(PUBLIC, 'avatar');
+  const AVATAR_FILE = path.join(AVATAR_DIR, `${JOB_ID}-avatar.mp4`);
+  ensureDirs(AVATAR_DIR);
+
+  let exitCode = 0;
+  try {
+    await run(
+      `node scripts/avatar.mjs --audio "${TTS_MP3}" --out "${AVATAR_FILE}"`,
+      { timeout: 10 * 60 * 1000 },
+    );
+  } catch (err) {
+    // exit code 2 = graceful skip (no API keys), other = real error
+    exitCode = err.code ?? 1;
+    if (exitCode === 2) {
+      console.log('  ⏭  Avatar skipped (no D_ID_API_KEY or REPLICATE_API_KEY)');
+    } else {
+      console.log(`  ⚠️  Avatar failed: ${err.message.slice(0, 120)} — continuing without it`);
+    }
+    return null;
+  }
+
+  if (!dryRun && !existsSync(AVATAR_FILE)) return null;
+  const relPath = path.relative(PUBLIC, AVATAR_FILE).replace(/\\/g, '/');
+  console.log(`  ✅ Avatar → ${relPath}`);
+  return relPath;
+}
+
+// ── Step 6/7: Remotion render ─────────────────────────────────────────────────
+async function stepRender(script, durationSec, imageSlides, brollClips, avatarClip) {
+  const stepNum = useAvatar ? 7 : 6;
+  step(stepNum, 'Remotion render');
 
   ensureDirs(RENDERS_DIR);
 
@@ -333,6 +370,7 @@ async function stepRender(script, durationSec, imageSlides, brollClips) {
     stats:          script.stats ?? [],
     durationInFrames,
     fps:            FPS,
+    ...(avatarClip ? { avatarClip } : {}),
   };
 
   const propsPath = path.join(PUBLIC, `${JOB_ID}-props.json`);
@@ -352,9 +390,10 @@ async function stepRender(script, durationSec, imageSlides, brollClips) {
   console.log(`  ✅ Raw render → ${path.relative(ROOT, RAW_MP4)}`);
 }
 
-// ── Step 7: Cinematic grade ───────────────────────────────────────────────────
+// ── Step 7/8: Cinematic grade ─────────────────────────────────────────────────
 async function stepGrade() {
-  step(7, 'FFmpeg cinematic color grade');
+  const stepNum = useAvatar ? 8 : 7;
+  step(stepNum, 'FFmpeg cinematic color grade');
 
   if (skipGrade) {
     FINAL_MP4 = RAW_MP4;
@@ -383,6 +422,7 @@ async function main() {
   console.log(`  Voice:    ${voice}`);
   if (topic) console.log(`  Topic:    ${topic}`);
   console.log(`  Mode:     ${useI2V ? '🎥 Real video clips (Wan2.1-I2V)' : fetchImages ? '🖼️  Ken Burns on images' : '✨ Motion graphics only'}`);
+  if (useAvatar) console.log(`  Avatar:   🤖 AI talking-head PiP enabled`);
   console.log();
 
   try {
@@ -402,7 +442,10 @@ async function main() {
     // Use animated clips if available, else legacy broll
     const brollClips = animatedClips.length ? animatedClips : legacyBroll;
 
-    await stepRender(script, durationSec, imageSlides, brollClips);
+    // Avatar PiP (optional, graceful skip if no API keys)
+    const avatarClip = await stepAvatar();
+
+    await stepRender(script, durationSec, imageSlides, brollClips, avatarClip);
     await stepGrade();
 
     // ── Done ─────────────────────────────────────────────────────────────────
